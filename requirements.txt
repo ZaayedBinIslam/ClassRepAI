@@ -1,7 +1,7 @@
 python-telegram-bot[job-queue]>=21,<23
 fastapi>=0.110
 uvicorn>=0.29
-sqlalchemy>=2.0
+sqlalchemy[asyncio]>=2.0
 aiosqlite>=0.20
 asyncpg>=0.29
 pydantic>=2.6
