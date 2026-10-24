@@ -33,7 +33,7 @@ It runs on a free tier, so the very first reply after a long idle may take ~30�
 |---|---|---|
 | <img src="SS/1.jpg.jpeg" width="240"><br>Setting up a class in plain language | <img src="SS/2.jpeg" width="240"><br>Reading the routine from a photo | <img src="SS/3.jpeg" width="240"><br>Teacher linked, announcement relayed |
 | <img src="SS/4.jpeg" width="240"><br>Uses the teacher's announcement as context and asks which day | <img src="SS/5.jpeg" width="240"><br>Honest about what it doesn't know yet | <img src="SS/6.jpeg" width="240"><br>"kalke ki class ache?" answered with rooms |
-| <img src="SS/7.jpeg" width="240"><br>Banglish request → poll → closed with the result | | |
+| <img src="SS/7.jpeg" width="240"><br>Banglish request → poll → closed with the result | <img src="SS/Teacher%20Interaction.png" width="240"><br>Teacher side: confirms in private chat and dictates an announcement | |
 
 ## The problem
 
