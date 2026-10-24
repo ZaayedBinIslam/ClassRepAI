@@ -6,14 +6,20 @@ import logging
 
 from app.bot import ALLOWED_UPDATES, build_application, log_privacy_mode
 from app.db import init_db
+from app.services.jobs import run_due
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
+async def tick(context) -> None:
+    await run_due(context.bot)
+
+
 async def post_init(app) -> None:
     await init_db()
     await log_privacy_mode(app)
+    app.job_queue.run_repeating(tick, interval=30, first=5)   # same work as /tick in production
 
 
 def main() -> None:

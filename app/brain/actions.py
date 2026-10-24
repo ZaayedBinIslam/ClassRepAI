@@ -4,15 +4,19 @@ checks permissions, and does the work. Raise ActionError(text) to tell the user 
 Each returns optional extra HTML (already escaped) that is appended to the model's reply."""
 import logging
 import re
+from datetime import date
 
 from sqlalchemy import select
 
 from app.brain.context import Turn
+from app.config import DEFAULT_POLL_MINUTES, MAX_POLL_MINUTES, MIN_VOTES
 from app.llm.schemas import Action
-from app.models import ChatMessage, Classroom, Course, Draft, Teacher, User
-from app.services import routine, teachers
+from app.models import ChatMessage, Classroom, Course, Draft, Poll, SessionChange, Teacher, User
+from app.services import polls, routine, teachers
+from app.services.dates import fmt_clock, fmt_date, fmt_time, now_local
+from app.services.memory import add_memory
 from app.services.people import ensure_membership
-from app.services.schedule import match_courses
+from app.services.schedule import build_sessions, load_class, match_courses
 from app.utils.telegram import esc, send
 
 log = logging.getLogger(__name__)
@@ -183,7 +187,96 @@ async def teacher_link_reply(a: Action, t: Turn) -> str:
     raise ActionError("Sorry, I didn't get that — do you teach this course? (yes / no)")
 
 
+async def create_poll(a: Action, t: Turn) -> str:
+    minutes = max(1, min(a.duration_minutes or DEFAULT_POLL_MINUTES, MAX_POLL_MINUTES))
+    if a.poll_kind == "general":
+        question = (a.question or "").strip()[:300]
+        options = list(dict.fromkeys(o.strip()[:100] for o in (a.options or []) if o and o.strip()))[:10]
+        if not question or len(options) < 2:
+            raise ActionError("What should the poll ask, and what are the options?")
+        p = await polls.post(t.bot, t.s, t.classroom, t.user.id, "general", question, options, minutes)
+        return f"🗳 Poll is up! It closes at {fmt_clock(p.closes_at)}."
+    if a.poll_kind != "cancel":
+        raise ActionError("What should the poll be about?")
+
+    # Cancellation: resolve the exact upcoming session.
+    course = await _one_course(t, a.course_hint)
+    now = now_local()
+    data = await load_class(t.s, t.classroom.id, now.date())
+    titles = {c.id: c.title for c in data.courses}
+    sessions = [x for x in build_sessions(data.slots, data.changes, titles, now.date(), 14)
+                if x.course_id == course.id and (x.day > now.date() or (x.start and x.start > now.time()))]
+    upcoming = [x for x in sessions if x.status != "cancelled"]
+    if not upcoming:
+        raise ActionError(f"I don't see any upcoming {course.title} class in the next 2 weeks.")
+    nexts = "; ".join(x.label() for x in upcoming[:3])
+    try:
+        day = date.fromisoformat(a.date) if a.date else None
+    except ValueError:
+        day = None
+    if day is None:
+        raise ActionError(f"Which {course.title} class? Next ones: {nexts}.")
+    target = [x for x in upcoming if x.day == day]
+    if not target:
+        if any(x.day == day for x in sessions):
+            raise ActionError(f"{course.title} on {fmt_date(day)} is already cancelled 🎉")
+        raise ActionError(f"There's no {course.title} class on {fmt_date(day)}. Next ones: {nexts}.")
+    session = target[0]   # ponytail: two slots of one course on one day -> first one; ask if that happens
+
+    teacher = data.teachers.get(course.teacher_id)
+    if teacher is None or teacher.status != "confirmed":
+        raise ActionError(f"{course.title}'s teacher isn't connected yet. Tell me \"add @username as our "
+                          f"{course.title} teacher\" and ask them to press Start in my private chat.")
+    duplicate = await t.s.scalar(select(Poll.id).where(Poll.course_id == course.id, Poll.session_date == day,
+                                                       Poll.status.in_(["open", "awaiting_teacher"])))
+    if duplicate:
+        raise ActionError(f"There's already a cancellation request for {course.title} on {fmt_date(day)}.")
+
+    question = f"Ask {teacher.name} to cancel {course.title} on {fmt_date(day)} ({fmt_time(session.start)})?"
+    p = await polls.post(t.bot, t.s, t.classroom, t.user.id, "cancel", question[:300], polls.CANCEL_OPTIONS,
+                         minutes, course_id=course.id, teacher_id=teacher.id, session_date=day,
+                         session_time=session.start, reason=(a.reason or "").strip()[:300] or None)
+    return (f"🗳 Poll closes at {fmt_clock(p.closes_at)}. It passes with more yes than no "
+            f"and at least {MIN_VOTES} votes.")
+
+
+async def cancel_reply(a: Action, t: Turn) -> str:
+    mine = {x.id for x in t.teacher_rows if x.status == "confirmed"}
+    p = await t.s.get(Poll, a.item_id) if a.item_id else None
+    if p is None or p.teacher_id not in mine or p.status != "awaiting_teacher":
+        raise ActionError("There's no cancellation request waiting for you right now.")
+    if a.decision not in ("approve", "decline"):
+        raise ActionError("Sorry, I didn't get that — should the class be cancelled or not?")
+    c = await t.s.get(Classroom, p.classroom_id)
+    course = await t.s.get(Course, p.course_id)
+    teacher = await t.s.get(Teacher, p.teacher_id)
+    note = (a.message_to_class or "").strip()[:500] or None
+    p.teacher_note = note
+    what = f"{course.title} on {fmt_date(p.session_date)}"
+    note_html = f"\n{esc(teacher.name)}'s note: <i>{esc(note)}</i>" if note else ""
+    note_mem = f" Note: {note}" if note else ""
+
+    if a.decision == "approve":
+        p.status = "approved"
+        t.s.add(SessionChange(classroom_id=c.id, course_id=course.id, session_date=p.session_date,
+                              change_type="cancelled", source="teacher_approval", note=note))
+        await add_memory(t.s, c.id, "teacher_decision", f"{teacher.name} approved cancelling {what}.{note_mem}",
+                         f"poll:{p.id}")
+        await send(t.bot, c.telegram_chat_id, f"✅ {esc(teacher.name)} approved: <b>{esc(what)}</b> is cancelled."
+                                               f"{note_html}")
+    else:
+        p.status = "declined"
+        await add_memory(t.s, c.id, "teacher_decision",
+                         f"{teacher.name} declined cancelling {what}; the class happens as usual.{note_mem}",
+                         f"poll:{p.id}")
+        await send(t.bot, c.telegram_chat_id, f"❌ {esc(teacher.name)} says <b>{esc(what)}</b> will happen as "
+                                               f"usual.{note_html}")
+    return f"I've told {esc(c.name)} ✅"
+
+
 HANDLERS = {
+    "create_poll": create_poll,
+    "cancel_reply": cancel_reply,
     "setup_class": setup_class,
     "read_routine": read_routine,
     "routine_draft_reply": routine_draft_reply,
