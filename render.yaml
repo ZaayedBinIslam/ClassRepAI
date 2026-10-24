@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: classrepai
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:              # values are set in the Render dashboard, never in this file
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMMA_MODEL
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: PUBLIC_BASE_URL
+        sync: false
+      - key: APP_SECRET
+        sync: false
