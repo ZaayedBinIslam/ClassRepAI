@@ -24,7 +24,8 @@ async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 def build_application(with_updater: bool) -> Application:
-    builder = Application.builder().token(settings.TELEGRAM_BOT_TOKEN).concurrent_updates(True)
+    builder = (Application.builder().token(settings.TELEGRAM_BOT_TOKEN).concurrent_updates(True)
+               .connect_timeout(20).read_timeout(30).write_timeout(30))   # slow networks / free hosting
     if not with_updater:
         builder = builder.updater(None)
     app = builder.build()

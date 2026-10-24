@@ -25,7 +25,7 @@ async def post_init(app) -> None:
 def main() -> None:
     app = build_application(with_updater=True)
     app.post_init = post_init
-    app.run_polling(allowed_updates=ALLOWED_UPDATES)   # also removes any webhook
+    app.run_polling(allowed_updates=ALLOWED_UPDATES, bootstrap_retries=5)   # also removes any webhook
 
 
 if __name__ == "__main__":
