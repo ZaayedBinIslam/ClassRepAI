@@ -1,8 +1,39 @@
 # ClassRepAI
 
-An AI class representative on Telegram that follows your class group, remembers the routine and every
-decision, runs fair polls, talks to teachers politely and relays their announcements — in Bangla,
-Banglish or English.
+**ClassRepAI** is an intelligent AI class representative, powered by Gemma 4, that lives in your class's
+Telegram group. It follows the conversation and understands Bangla, Banglish and English. It reads the
+class routine straight from a photo and answers questions from what it actually knows. When students ask,
+it runs polls and politely negotiates with teachers on the class's behalf. Every decision goes into its
+memory, so it can recall weeks later what the class agreed and what the teacher said.
+
+## 🚀 Try it now: [@ClassRepAI_bot](https://t.me/ClassRepAI_bot)
+
+The bot is live and hosted, so judges can try it in their own Telegram group. No setup or code needed.
+
+1. Create a Telegram group and add **@ClassRepAI_bot**.
+2. Introduce your class: `@ClassRepAI_bot this is CSE 7A`
+3. Send a routine photo (e.g. [`docs/sample_routine.png`](docs/sample_routine.png)) with the caption
+   `@ClassRepAI_bot here's our routine`. Check what it read, then reply `save it` (or tell it what to fix).
+4. Ask anything about your classes: `@ClassRepAI_bot kal ki class ache?` or `@ClassRepAI_bot when is DBMS lab?`
+5. Start a vote: `@ClassRepAI_bot make a 1 minute poll: makeup class on Sunday or Tuesday?`
+6. **Teacher flow (needs a second Telegram account with a username):**
+   - In the group: `@ClassRepAI_bot add @teacher_username as our DBMS teacher`
+   - From the teacher account: open @ClassRepAI_bot, press **Start**, and reply `yes`.
+   - In the group: `@ClassRepAI_bot ask sir to cancel the next DBMS class, 2 minute poll` → vote.
+     When it passes, the teacher gets a polite request and can simply reply, e.g. `ok, cancel it but read chapter 5`.
+   - From the teacher account: `Tell CSE 7A the quiz is moved to Thursday 10am`, then `send it`.
+7. Ask what was decided: `@ClassRepAI_bot what have we decided so far?`
+
+Tips: the bot reads the group for context but only replies when you **mention it or reply to it**.
+It runs on a free tier, so the very first reply after a long idle may take ~30–60 s.
+
+## Screenshots / demo
+
+| | | |
+|---|---|---|
+| <img src="SS/1.jpg.jpeg" width="240"><br>Setting up a class in plain language | <img src="SS/2.jpeg" width="240"><br>Reading the routine from a photo | <img src="SS/3.jpeg" width="240"><br>Teacher linked, announcement relayed |
+| <img src="SS/4.jpeg" width="240"><br>Uses the teacher's announcement as context and asks which day | <img src="SS/5.jpeg" width="240"><br>Honest about what it doesn't know yet | <img src="SS/6.jpeg" width="240"><br>"kalke ki class ache?" answered with rooms |
+| <img src="SS/7.jpeg" width="240"><br>Banglish request → poll → closed with the result | | |
 
 ## The problem
 
@@ -24,9 +55,6 @@ cancellation poll passes, ClassRepAI messages the teacher politely, understands 
 plain-language answer, and tells the class. Teachers can message it privately to post announcements.
 Every decision (poll results, teacher decisions, announcements) is saved to the class's memory, so the bot
 can answer "what did we decide?" weeks later.
-
-There are no reply buttons: you talk to it like a person ("save it", "DBMS is at 11 actually",
-"ji, cancel korte paren").
 
 ## How it works
 
@@ -58,25 +86,9 @@ Design choices:
   as instructions.
 - **Nothing time-based lives in memory.** Poll closing and teacher deadlines are rows in a `jobs` table,
   so a restart doesn't lose them.
-- **Human confirmation before publishing model output** (routine save, teacher announcements) — given in
-  plain language, not buttons.
+- **Human confirmation before publishing model output** (routine save, teacher announcements), given in
+  plain language.
 - **Privacy:** the bot keeps only the last ~50 messages per chat for up to 3 days, as context.
-
-## Try it
-
-- Bot: `@<bot_username>`
-- Demo group: `<invite link>`
-- Demo video: `<link>`
-- Hosted on a free tier: the first reply after a long idle may take ~30–60 s.
-
-Things to say in the group (mention the bot):
-- `@bot this is CSE 7A`
-- send `docs/sample_routine.png` with caption `@bot here's our routine` → reply `save it`
-- `@bot kal ki class ache?`
-- `@bot add @teacher_username as our DBMS teacher`
-- `@bot can you ask sir to cancel tomorrow's DBMS? 2 minute poll`
-- `@bot poll: makeup class Sunday or Tuesday?`
-- `@bot what have we decided so far?`
 
 ## How to run it
 
@@ -94,10 +106,6 @@ Things to say in the group (mention the bot):
 **Deploy:** create a free Neon Postgres database and a Render web service from this repo (Docker,
 `render.yaml`). Set the env vars in Render, with `PUBLIC_BASE_URL` = the Render URL (the app registers the
 webhook on startup). On cron-job.org, call `GET <PUBLIC_BASE_URL>/tick?secret=<APP_SECRET>` every minute.
-
-## Screenshots / demo
-
-_(screenshots in `docs/screenshots/`)_
 
 ## What's not done yet
 

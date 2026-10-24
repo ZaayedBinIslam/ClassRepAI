@@ -76,7 +76,10 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
         # 5. Act. If the action fails, its reason replaces the model's reply.
         try:
-            extra = await run(result.action or Action(), turn)
+            action = result.action or Action()
+            extra = await run(action, turn)
+            if action.type == "read_routine":       # the draft summary says it all; avoid "saved!" claims
+                result.reply = ""
             await s.commit()
             text = "\n\n".join(p for p in [esc(result.reply.strip()), extra] if p)
         except ActionError as e:

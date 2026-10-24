@@ -55,6 +55,7 @@ Rules:
 - For course_hint, use the exact course title from CLASS INFORMATION when the course is listed there.
 - reason: only the reason the students actually gave (in their words), otherwise null. Never invent one.
 - In reply, don't state poll close times, ids or that something succeeded; the system adds those facts. For actions, reply can be a short natural lead-in or empty.
+- Never claim something is already saved, sent or created. read_routine only makes a DRAFT that the sender must confirm; say you'll show what you read.
 - Answer questions about classes only from CLASS INFORMATION and CLASS MEMORY, with concrete dates (e.g. "tomorrow (Sun 26 Oct)").
 
 Return ONLY JSON like:
