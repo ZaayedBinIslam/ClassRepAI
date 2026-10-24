@@ -3,7 +3,6 @@
 All instructions go inside the user content (Gemma doesn't rely on a system-instruction field).
 """
 import asyncio
-import json
 import logging
 import re
 import time
@@ -68,11 +67,6 @@ def extract_json(text: str) -> str:
     if start == -1 or end <= start:
         raise ValueError("no JSON object found")
     return text[start:end + 1]
-
-
-def json_shape(schema: type[BaseModel]) -> str:
-    """Compact JSON schema to paste into prompts."""
-    return json.dumps(schema.model_json_schema(), separators=(",", ":"))
 
 
 async def generate_json(prompt: str, schema: type[BaseModel], image: bytes | None = None,
