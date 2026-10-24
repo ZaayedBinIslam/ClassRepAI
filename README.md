@@ -6,6 +6,8 @@ class routine straight from a photo and answers questions from what it actually 
 it runs polls and politely negotiates with teachers on the class's behalf. Every decision goes into its
 memory, so it can recall weeks later what the class agreed and what the teacher said.
 
+> 💬 **Anyone can try the AI right now:** search for [@ClassRepAI_bot](https://t.me/ClassRepAI_bot) on Telegram and add it to your group.
+
 ## 🚀 Try it now: [@ClassRepAI_bot](https://t.me/ClassRepAI_bot)
 
 The bot is live and hosted, so judges can try it in their own Telegram group. No setup or code needed.
