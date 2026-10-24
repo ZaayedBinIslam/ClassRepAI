@@ -9,10 +9,11 @@ from sqlalchemy import select
 
 from app.brain.context import Turn
 from app.llm.schemas import Action
-from app.models import ChatMessage, Classroom, Draft
-from app.services import routine
+from app.models import ChatMessage, Classroom, Course, Draft, Teacher, User
+from app.services import routine, teachers
 from app.services.people import ensure_membership
-from app.utils.telegram import esc
+from app.services.schedule import match_courses
+from app.utils.telegram import esc, send
 
 log = logging.getLogger(__name__)
 
@@ -113,8 +114,79 @@ async def routine_draft_reply(a: Action, t: Turn) -> str:
     raise ActionError("Should I save it, change something, or discard it?")
 
 
+async def _one_course(t: Turn, hint: str | None, create: bool = False) -> Course:
+    """Resolve a course name from the model to exactly one course of this class."""
+    courses = list(await t.s.scalars(select(Course).where(Course.classroom_id == t.classroom.id)))
+    found = match_courses(courses, hint)
+    if len(found) == 1:
+        return found[0]
+    if len(found) > 1:
+        raise ActionError("Which course exactly: " + ", ".join(c.title for c in found) + "?")
+    if not create or not (hint or "").strip():
+        known = ", ".join(c.title for c in courses) or "none yet"
+        raise ActionError(f"I don't know a course called \"{hint or '?'}\". Courses I know: {known}.")
+    course = Course(classroom_id=t.classroom.id, title=hint.strip()[:200])
+    t.s.add(course)
+    await t.s.flush()
+    return course
+
+
+async def add_teacher(a: Action, t: Turn) -> str:
+    uname = (a.teacher_username or "").strip().lstrip("@").lower()
+    if not re.fullmatch(r"[a-z0-9_]{5,32}", uname):
+        raise ActionError("What's the teacher's Telegram username? (something like @rahim_sir)")
+    if not a.course_hint:
+        raise ActionError(f"Which course does @{uname} teach?")
+    course = await _one_course(t, a.course_hint, create=True)
+    teacher = await t.s.scalar(select(Teacher).where(Teacher.classroom_id == t.classroom.id,
+                                                     Teacher.username == uname))
+    if teacher is None:
+        teacher = Teacher(classroom_id=t.classroom.id, username=uname, added_by=t.user.id)
+        t.s.add(teacher)
+    elif teacher.status == "rejected":
+        teacher.status, teacher.user_id = "pending", None
+    if a.teacher_display_name and not teacher.display_name:
+        teacher.display_name = a.teacher_display_name.strip()[:100]
+    await t.s.flush()
+    course.teacher_id = teacher.id
+    await t.s.flush()
+
+    line = f"👍 @{esc(uname)} is now listed as the teacher for <b>{esc(course.title)}</b>."
+    if teacher.status == "confirmed":
+        return line + " They're already connected."
+    known = await t.s.scalar(select(User).where(User.username == uname, User.has_started_bot.is_(True)))
+    if known and await teachers.ask_to_confirm(t.bot, t.s, teacher, known):
+        return line + " I've messaged them to confirm."
+    return line + f" Ask them to open @{esc(t.bot.username)} and press Start so I can reach them."
+
+
+async def teacher_link_reply(a: Action, t: Turn) -> str:
+    tr = next((x for x in t.teacher_rows if x.id == a.item_id and x.status == "awaiting_confirm"), None)
+    if tr is None:
+        raise ActionError("There's nothing waiting for your confirmation right now.")
+    c = await t.s.get(Classroom, tr.classroom_id)
+    courses = await teachers.course_names(t.s, tr.id)
+    if a.decision == "yes":
+        tr.status = "confirmed"
+        tr.display_name = tr.display_name or t.user.full_name
+        await send(t.bot, c.telegram_chat_id, f"✅ {esc(tr.name)} is now connected for <b>{esc(courses)}</b>.")
+        return (f"You're connected to <b>{esc(c.name)}</b> ✅. Message me here anytime to send an "
+                f"announcement to the class.")
+    if a.decision == "no":
+        tr.status = "rejected"
+        for co in await t.s.scalars(select(Course).where(Course.teacher_id == tr.id)):
+            co.teacher_id = None
+        await send(t.bot, c.telegram_chat_id,
+                   f"⚠️ @{esc(tr.username)} says they don't teach {esc(courses)} for {esc(c.name)}. "
+                   f"Please check the username.")
+        return "Sorry for the trouble! I've let the class know."
+    raise ActionError("Sorry, I didn't get that — do you teach this course? (yes / no)")
+
+
 HANDLERS = {
     "setup_class": setup_class,
     "read_routine": read_routine,
     "routine_draft_reply": routine_draft_reply,
+    "add_teacher": add_teacher,
+    "teacher_link_reply": teacher_link_reply,
 }
