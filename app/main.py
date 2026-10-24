@@ -14,7 +14,7 @@ from telegram import Update
 
 from app.bot import ALLOWED_UPDATES, build_application, log_privacy_mode
 from app.config import settings
-from app.db import SessionLocal, init_db
+from app.db import SessionLocal, engine, init_db
 from app.models import ProcessedUpdate
 from app.services.jobs import run_due
 
@@ -79,4 +79,5 @@ async def health():
     except Exception:
         db = False
     info = await application.bot.get_webhook_info()
-    return {"ok": db, "db": db, "webhook": info.url or None, "pending_updates": info.pending_update_count}
+    return {"ok": db, "db": db, "db_kind": engine.dialect.name, "webhook": info.url or None,
+            "pending_updates": info.pending_update_count, "webhook_error": info.last_error_message}
