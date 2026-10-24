@@ -4,16 +4,16 @@ checks permissions, and does the work. Raise ActionError(text) to tell the user 
 Each returns optional extra HTML (already escaped) that is appended to the model's reply."""
 import logging
 import re
-from datetime import date
+from datetime import date, timedelta
 
 from sqlalchemy import select
 
 from app.brain.context import Turn
-from app.config import DEFAULT_POLL_MINUTES, MAX_POLL_MINUTES, MIN_VOTES
+from app.config import DEFAULT_POLL_MINUTES, DRAFT_HOURS, MAX_POLL_MINUTES, MIN_VOTES
 from app.llm.schemas import Action
 from app.models import ChatMessage, Classroom, Course, Draft, Poll, SessionChange, Teacher, User
 from app.services import polls, routine, teachers
-from app.services.dates import fmt_clock, fmt_date, fmt_time, now_local
+from app.services.dates import fmt_clock, fmt_date, fmt_time, now_local, parse_hhmm, utcnow
 from app.services.memory import add_memory
 from app.services.people import ensure_membership
 from app.services.schedule import build_sessions, load_class, match_courses
@@ -274,7 +274,101 @@ async def cancel_reply(a: Action, t: Turn) -> str:
     return f"I've told {esc(c.name)} ✅"
 
 
+async def _resolve_changes(t: Turn, classroom_id: int, changes) -> list[dict]:
+    """Keep only schedule changes whose course and date we can pin down."""
+    courses = list(await t.s.scalars(select(Course).where(Course.classroom_id == classroom_id)))
+    out = []
+    for ch in changes:
+        found = match_courses(courses, ch.course_hint)
+        try:
+            day = date.fromisoformat(ch.date)
+            new_time = fmt_time(parse_hhmm(ch.new_start_time)) if ch.new_start_time else None
+        except (ValueError, TypeError):
+            continue
+        if len(found) == 1:
+            out.append({"course_id": found[0].id, "course": found[0].title, "date": day.isoformat(),
+                        "change_type": ch.change_type, "new_start_time": new_time, "new_room": ch.new_room})
+    return out
+
+
+async def _preview(t: Turn, payload: dict) -> str:
+    tr = await t.s.get(Teacher, payload["teacher_id"])
+    lines = [f"Here's what I'll post in <b>{esc(payload['class_name'])}</b>:\n",
+             f"📢 <b>Announcement from {esc(tr.name)} ({esc(await teachers.course_names(t.s, tr.id))})</b>",
+             esc(payload["text"])]
+    for ch in payload["changes"]:
+        extra = " ".join(filter(None, [ch["new_start_time"], ch["new_room"] and f"Room {ch['new_room']}"]))
+        lines.append(f"📌 I'll also update the schedule: {esc(ch['course'])} on "
+                     f"{fmt_date(date.fromisoformat(ch['date']))}: {ch['change_type'].replace('_', ' ')} {esc(extra)}")
+    lines.append("\nShall I send it? Or tell me what to change.")
+    return "\n".join(lines)
+
+
+async def draft_announcement(a: Action, t: Turn) -> str:
+    links = [x for x in t.teacher_rows if x.status == "confirmed"]
+    if not links:
+        raise ActionError("You're not connected to a class yet — please confirm your course first.")
+    rooms = {x.id: await t.s.get(Classroom, x.classroom_id) for x in links}
+    if len(links) == 1:
+        tr = links[0]
+    else:
+        hint = (a.class_name or "").strip().lower()
+        found = [x for x in links if hint and (hint == rooms[x.id].name.lower() or hint in rooms[x.id].name.lower())]
+        if len(found) != 1:
+            raise ActionError("Which class is this for: " + " or ".join(r.name for r in rooms.values()) + "?")
+        tr = found[0]
+    text = (a.text or "").strip()[:2000]
+    if not text:
+        raise ActionError("What would you like me to tell the class?")
+    c = rooms[tr.id]
+    for old in await t.s.scalars(select(Draft).where(Draft.chat_id == t.chat_id, Draft.kind == "announcement",
+                                                     Draft.status == "open")):
+        old.status = "discarded"
+    payload = {"class_name": c.name, "teacher_id": tr.id, "text": text,
+               "changes": await _resolve_changes(t, c.id, a.changes)}
+    t.s.add(Draft(kind="announcement", classroom_id=c.id, created_by=t.user.id, chat_id=t.chat_id,
+                  payload=payload, expires_at=utcnow() + timedelta(hours=DRAFT_HOURS)))
+    return await _preview(t, payload)
+
+
+async def announcement_draft_reply(a: Action, t: Turn) -> str:
+    d = await t.s.get(Draft, a.item_id) if a.item_id else None
+    if not d or d.kind != "announcement" or d.status != "open" or d.created_by != t.user.id:
+        raise ActionError("I don't have an announcement draft from you right now. What should I tell the class?")
+    if a.decision == "discard":
+        d.status = "discarded"
+        return "Okay, I won't send it 👍"
+    if a.decision == "edit":
+        new_text = (a.text or "").strip()[:2000]
+        if not new_text:
+            raise ActionError("What should the announcement say instead?")
+        changes = await _resolve_changes(t, d.classroom_id, a.changes) if a.changes else d.payload["changes"]
+        d.payload = {**d.payload, "text": new_text, "changes": changes}
+        return await _preview(t, d.payload)
+    if a.decision != "send":
+        raise ActionError("Shall I send it, change something, or drop it?")
+
+    c = await t.s.get(Classroom, d.classroom_id)
+    tr = await t.s.get(Teacher, d.payload["teacher_id"])
+    courses = await teachers.course_names(t.s, tr.id)
+    sent = await send(t.bot, c.telegram_chat_id,
+                      f"📢 <b>Announcement from {esc(tr.name)} ({esc(courses)})</b>\n{esc(d.payload['text'])}")
+    if not sent:
+        raise ActionError(f"I couldn't post in {c.name} — am I still in that group?")
+    for ch in d.payload["changes"]:
+        t.s.add(SessionChange(classroom_id=c.id, course_id=ch["course_id"], session_date=date.fromisoformat(ch["date"]),
+                              change_type=ch["change_type"], source="announcement", note=d.payload["text"][:300],
+                              new_start_time=parse_hhmm(ch["new_start_time"]) if ch["new_start_time"] else None,
+                              new_room=ch["new_room"]))
+    await add_memory(t.s, c.id, "announcement",
+                     f"{tr.name} ({courses}) announced: {d.payload['text'][:500]}", f"draft:{d.id}")
+    d.status = "done"
+    return f"Sent to {esc(c.name)} ✅"
+
+
 HANDLERS = {
+    "draft_announcement": draft_announcement,
+    "announcement_draft_reply": announcement_draft_reply,
     "create_poll": create_poll,
     "cancel_reply": cancel_reply,
     "setup_class": setup_class,
