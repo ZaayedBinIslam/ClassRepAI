@@ -1,0 +1,15 @@
+# secrets
+.env
+
+# local data
+*.db
+*.db-journal
+
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# organizer documents (not part of the project)
+*.rtf
