@@ -237,7 +237,7 @@ async def create_poll(a: Action, t: Turn) -> str:
                          minutes, course_id=course.id, teacher_id=teacher.id, session_date=day,
                          session_time=session.start, reason=(a.reason or "").strip()[:300] or None)
     return (f"🗳 Poll closes at {fmt_clock(p.closes_at)}. It passes with more yes than no "
-            f"and at least {MIN_VOTES} votes.")
+            f"and at least {MIN_VOTES} vote{'s' if MIN_VOTES > 1 else ''}.")
 
 
 async def cancel_reply(a: Action, t: Turn) -> str:

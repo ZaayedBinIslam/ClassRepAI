@@ -123,7 +123,7 @@ APP_SECRET=                # random string; Telegram webhook secret AND /tick se
 
 Removed from v1 and why:
 - `POLL_DURATION_MINUTES` → the student says the duration in the message; default 20 min is a constant.
-- `POLL_MIN_VOTES` → constant `MIN_VOTES = 3` in `services/polls.py`.
+- `POLL_MIN_VOTES` → constant `MIN_VOTES = 1` in `config.py` (1 for testing; raise for a real class).
 - `POLL_MIN_TURNOUT` → dropped. The bot only knows members who have spoken, so turnout was unreliable.
 - `TEACHER_RESPONSE_DEADLINE_MINUTES` → constant (3 h, or 30 min before class, whichever is first).
 - `TIMEZONE`, `LOG_LEVEL` → constants (`Asia/Dhaka`, `INFO`).

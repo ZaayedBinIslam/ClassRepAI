@@ -78,7 +78,7 @@ async def close_poll(bot: Bot, s: AsyncSession, payload: dict) -> None:
     what = f"{course.title} on {fmt_date(p.session_date)}"
     if not cancel_passed(yes, no):
         p.status = "failed"
-        why = f"only {yes + no} votes (needs {MIN_VOTES})" if yes + no < MIN_VOTES else f"{yes} yes / {no} no"
+        why = f"not enough votes ({yes + no}, needs {MIN_VOTES})" if yes + no < MIN_VOTES else f"{yes} yes / {no} no"
         await add_memory(s, c.id, "poll_result",
                          f"Poll ({today}): the class did NOT request cancelling {what} ({why}).", f"poll:{p.id}")
         await send(bot, c.telegram_chat_id,

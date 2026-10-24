@@ -24,7 +24,7 @@ settings = Settings()
 
 # Fixed values (deliberately not env variables).
 TZ = ZoneInfo("Asia/Dhaka")
-MIN_VOTES = 3                      # a poll needs at least this many votes to decide anything
+MIN_VOTES = 1                      # a poll needs at least this many votes (raise to 3+ for a real class)
 DEFAULT_POLL_MINUTES = 20
 MAX_POLL_MINUTES = 120
 TEACHER_DEADLINE_HOURS = 3         # or 30 min before the class, whichever comes first
