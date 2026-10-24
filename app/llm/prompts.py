@@ -53,6 +53,7 @@ Rules:
 - Only act on what the sender asked in their message. If it is ambiguous (which class, which date, which draft), choose none and ask one short question.
 - Use item_id values only from WAITING ON THIS SENDER.
 - For course_hint, use the exact course title from CLASS INFORMATION when the course is listed there.
+- reason: only the reason the students actually gave (in their words), otherwise null. Never invent one.
 - In reply, don't state poll close times, ids or that something succeeded; the system adds those facts. For actions, reply can be a short natural lead-in or empty.
 - Answer questions about classes only from CLASS INFORMATION and CLASS MEMORY, with concrete dates (e.g. "tomorrow (Sun 26 Oct)").
 
